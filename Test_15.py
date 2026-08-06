@@ -5,6 +5,133 @@ import sqlite3
 import hashlib
 import datetime
 from io import BytesIO
+import base64
+from PIL import Image
+import plotly.express as px
+import plotly.graph_objects as go
+from streamlit_option_menu import option_menu
+
+# ==================== CONFIGURATION PAGE ====================
+st.set_page_config(
+    page_title="Gestion CP_410 & CP_411",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ==================== LOGO ET STYLE ====================
+def get_logo_base64():
+    """Crée un logo SVG simple en base64"""
+    svg_logo = '''
+    <svg width="200" height="60" xmlns="http://www.w3.org/2000/svg">
+        <rect width="200" height="60" rx="10" fill="#1E3A5F"/>
+        <text x="15" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">CP</text>
+        <text x="55" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">410</text>
+        <text x="110" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">|</text>
+        <text x="130" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">411</text>
+        <circle cx="185" cy="15" r="8" fill="#4FC3F7" opacity="0.8"/>
+        <circle cx="185" cy="15" r="4" fill="#FFFFFF" opacity="0.6"/>
+    </svg>
+    '''
+    return base64.b64encode(svg_logo.encode()).decode()
+
+# CSS personnalisé
+st.markdown(f"""
+<style>
+    /* Style du logo dans la sidebar */
+    .logo-container {{
+        text-align: center;
+        padding: 20px 0;
+        background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%);
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }}
+    .logo-container svg {{
+        width: 180px;
+        height: auto;
+    }}
+    /* Cartes de métriques */
+    .metric-card {{
+        background: white;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        border-left: 4px solid #4FC3F7;
+        margin: 10px 0;
+    }}
+    .metric-card h3 {{
+        color: #1E3A5F;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }}
+    .metric-card .value {{
+        font-size: 28px;
+        font-weight: bold;
+        color: #1E3A5F;
+        margin: 5px 0;
+    }}
+    .metric-card .change {{
+        font-size: 14px;
+        color: #4CAF50;
+    }}
+    .metric-card .change.negative {{
+        color: #f44336;
+    }}
+    /* Sidebar améliorée */
+    .css-1d391kg {{
+        background-color: #f8f9fa;
+    }}
+    .stButton > button {{
+        width: 100%;
+        border-radius: 8px;
+        font-weight: 500;
+        transition: all 0.3s;
+    }}
+    .stButton > button:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }}
+    /* En-tête principal */
+    .main-header {{
+        background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        margin-bottom: 20px;
+    }}
+    .main-header h1 {{
+        margin: 0;
+        font-size: 28px;
+    }}
+    .main-header p {{
+        margin: 5px 0 0 0;
+        opacity: 0.9;
+    }}
+    /* Badges de statut */
+    .badge {{
+        display: inline-block;
+        padding: 3px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    .badge-success {{
+        background: #4CAF50;
+        color: white;
+    }}
+    .badge-danger {{
+        background: #f44336;
+        color: white;
+    }}
+    .badge-warning {{
+        background: #FF9800;
+        color: white;
+    }}
+</style>
+""", unsafe_allow_html=True)
 
 # ==================== DATABASE MANAGER ====================
 class DatabaseManager:
@@ -46,6 +173,17 @@ class DatabaseManager:
                 action TEXT,
                 details TEXT,
                 timestamp TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS file_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                filename TEXT,
+                file_type TEXT,
+                rows_imported INTEGER,
+                upload_date TEXT
             )
         ''')
         
@@ -100,6 +238,16 @@ class DatabaseManager:
         conn.commit()
         conn.close()
     
+    def log_file_upload(self, username, filename, file_type, rows):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO file_history (username, filename, file_type, rows_imported, upload_date)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (username, filename, file_type, rows, datetime.datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+    
     def get_all_users(self):
         conn = sqlite3.connect(self.db_file)
         cursor = conn.cursor()
@@ -110,6 +258,23 @@ class DatabaseManager:
         users = cursor.fetchall()
         conn.close()
         return users
+    
+    def get_user_count(self):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users WHERE status = 'active'")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
+    
+    def get_activity_stats(self, days=7):
+        conn = sqlite3.connect(self.db_file)
+        cursor = conn.cursor()
+        cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat()
+        cursor.execute("SELECT COUNT(*) FROM activity_logs WHERE timestamp > ?", (cutoff,))
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count
     
     def add_user(self, username, password, full_name, role='user'):
         conn = sqlite3.connect(self.db_file)
@@ -180,6 +345,10 @@ def init_session_state():
         st.session_state.verif_410_411 = None
     if 'verif_411_410' not in st.session_state:
         st.session_state.verif_411_410 = None
+    if 'show_change_pwd' not in st.session_state:
+        st.session_state.show_change_pwd = False
+    if 'show_user_mgmt' not in st.session_state:
+        st.session_state.show_user_mgmt = False
 
 # ==================== FONCTIONS AVEC CACHE ====================
 @st.cache_data
@@ -204,9 +373,9 @@ def load_file(uploaded_file):
 def compute_policy_comparison_410_411(df410, df411):
     """Compare les polices 410 -> 411 avec cache"""
     if df410 is None or df411 is None:
-        return None, None
+        return None, None, None
     if "No Police" not in df410.columns or "No Police" not in df411.columns:
-        return None, None
+        return None, None, None
     
     cp410_policies = set(df410["No Police"].dropna().astype(str).str.strip())
     cp411_policies = set(df411["No Police"].dropna().astype(str).str.strip())
@@ -215,7 +384,6 @@ def compute_policy_comparison_410_411(df410, df411):
     only_410 = sorted(cp410_policies - cp411_policies)
     
     max_len = max(len(common), len(only_410))
-    # Version vectorisée
     common_series = pd.Series(common + [""] * (max_len - len(common)))
     only_series = pd.Series(only_410 + [""] * (max_len - len(only_410)))
     
@@ -225,16 +393,23 @@ def compute_policy_comparison_410_411(df410, df411):
         "Police_410_Only": only_series,
         "Etat_2": ["Police non retrouvée dans 411"] * len(only_410) + [""] * (max_len - len(only_410))
     })
-    stats = f"Total CP_410: {len(cp410_policies)} | Total CP_411: {len(cp411_policies)} | Correspondances: {len(common)} | Différences: {len(only_410)}"
-    return df_result, stats
+    
+    stats = {
+        "total_410": len(cp410_policies),
+        "total_411": len(cp411_policies),
+        "matches": len(common),
+        "differences": len(only_410),
+        "match_rate": round(len(common) / len(cp410_policies) * 100, 1) if len(cp410_policies) > 0 else 0
+    }
+    return df_result, stats, f"Correspondances: {len(common)}/{len(cp410_policies)} ({stats['match_rate']}%)"
 
 @st.cache_data
 def compute_policy_comparison_411_410(df411, df410):
     """Compare les polices 411 -> 410 avec cache"""
     if df411 is None or df410 is None:
-        return None, None
+        return None, None, None
     if "No Police" not in df411.columns or "No Police" not in df410.columns:
-        return None, None
+        return None, None, None
     
     cp411_policies = set(df411["No Police"].dropna().astype(str).str.strip())
     cp410_policies = set(df410["No Police"].dropna().astype(str).str.strip())
@@ -252,8 +427,15 @@ def compute_policy_comparison_411_410(df411, df410):
         "Police_411_Only": only_series,
         "Etat_2": ["Police non retrouvée dans 410"] * len(only_411) + [""] * (max_len - len(only_411))
     })
-    stats = f"Total CP_411: {len(cp411_policies)} | Total CP_410: {len(cp410_policies)} | Correspondances: {len(common)} | Différences: {len(only_411)}"
-    return df_result, stats
+    
+    stats = {
+        "total_411": len(cp411_policies),
+        "total_410": len(cp410_policies),
+        "matches": len(common),
+        "differences": len(only_411),
+        "match_rate": round(len(common) / len(cp411_policies) * 100, 1) if len(cp411_policies) > 0 else 0
+    }
+    return df_result, stats, f"Correspondances: {len(common)}/{len(cp411_policies)} ({stats['match_rate']}%)"
 
 @st.cache_data
 def compute_invalid_refs(df411):
@@ -286,6 +468,18 @@ def compute_polices_for_recus(df411, recu_list):
                 police_dict[num].append(police)
     return police_dict
 
+@st.cache_data
+def get_data_stats(df):
+    """Calcule des statistiques sur les données"""
+    if df is None or df.empty:
+        return None
+    return {
+        "rows": len(df),
+        "columns": len(df.columns),
+        "nulls": df.isnull().sum().sum(),
+        "duplicates": df.duplicated().sum()
+    }
+
 # ==================== AFFICHAGE DATAFRAME AVEC PAGINATION ====================
 def display_dataframe(df, title="", key_suffix=""):
     """Affiche un DataFrame avec option d'affichage complet ou limité"""
@@ -297,51 +491,195 @@ def display_dataframe(df, title="", key_suffix=""):
     total_rows = len(df)
     st.caption(f"Total : {total_rows} lignes")
     
-    # Option pour afficher tout ou partie
     show_all_key = f"show_all_{key_suffix}"
     if show_all_key not in st.session_state:
         st.session_state[show_all_key] = False
     
     col1, col2 = st.columns([1, 4])
     with col1:
-        if st.button(f"Afficher tout" if not st.session_state[show_all_key] else "Afficher un aperçu", key=f"toggle_{key_suffix}"):
+        if st.button(f"📊 Afficher tout" if not st.session_state[show_all_key] else "📄 Aperçu", key=f"toggle_{key_suffix}"):
             st.session_state[show_all_key] = not st.session_state[show_all_key]
             st.rerun()
     
     if st.session_state[show_all_key]:
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, use_container_width=True, height=500)
     else:
-        st.dataframe(df.head(1000), use_container_width=True)
+        st.dataframe(df.head(1000), use_container_width=True, height=400)
         if total_rows > 1000:
             st.info(f"Affichage des 1000 premières lignes seulement. Cliquez sur 'Afficher tout' pour voir l'intégralité ({total_rows} lignes).")
 
+# ==================== METRIQUES ====================
+def display_metrics(stats):
+    """Affiche les métriques dans des cartes"""
+    if stats:
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h3>📄 Total CP_410</h3>
+                <div class="value">{stats.get('total_410', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h3>📄 Total CP_411</h3>
+                <div class="value">{stats.get('total_411', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #4CAF50;">
+                <h3>✅ Correspondances</h3>
+                <div class="value">{stats.get('matches', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col4:
+            st.markdown(f"""
+            <div class="metric-card" style="border-left-color: #FF9800;">
+                <h3>⚠️ Différences</h3>
+                <div class="value">{stats.get('differences', 0)}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col5:
+            rate = stats.get('match_rate', 0)
+            color = "#4CAF50" if rate >= 80 else "#FF9800" if rate >= 60 else "#f44336"
+            st.markdown(f"""
+            <div class="metric-card" style="border-left-color: {color};">
+                <h3>📊 Taux de correspondance</h3>
+                <div class="value">{rate}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+def display_dashboard_metrics():
+    """Affiche le tableau de bord avec les métriques globales"""
+    db = st.session_state.db
+    
+    st.markdown("### 📊 Tableau de bord")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        user_count = db.get_user_count()
+        st.metric("👥 Utilisateurs actifs", user_count, delta=None)
+    
+    with col2:
+        activity = db.get_activity_stats(7)
+        st.metric("📈 Activité (7j)", activity, delta=None)
+    
+    with col3:
+        if st.session_state.cp410_data is not None:
+            rows = len(st.session_state.cp410_data)
+            st.metric("📄 CP_410 lignes", rows, delta=None)
+        else:
+            st.metric("📄 CP_410", "Non importé", delta=None)
+    
+    with col4:
+        if st.session_state.cp411_data is not None:
+            rows = len(st.session_state.cp411_data)
+            st.metric("📄 CP_411 lignes", rows, delta=None)
+        else:
+            st.metric("📄 CP_411", "Non importé", delta=None)
+
+# ==================== GRAPHIQUES ====================
+def create_comparison_chart(stats):
+    """Crée un graphique de comparaison"""
+    if not stats:
+        return None
+    
+    fig = go.Figure(data=[
+        go.Bar(name='CP_410', x=['Polices'], y=[stats.get('total_410', 0)], 
+               marker_color='#1E3A5F', text=[stats.get('total_410', 0)], textposition='auto'),
+        go.Bar(name='CP_411', x=['Polices'], y=[stats.get('total_411', 0)], 
+               marker_color='#4FC3F7', text=[stats.get('total_411', 0)], textposition='auto'),
+        go.Bar(name='Correspondances', x=['Polices'], y=[stats.get('matches', 0)], 
+               marker_color='#4CAF50', text=[stats.get('matches', 0)], textposition='auto')
+    ])
+    
+    fig.update_layout(
+        barmode='group',
+        title='Comparaison des polices',
+        xaxis_title='Catégorie',
+        yaxis_title='Nombre',
+        showlegend=True,
+        height=300,
+        margin=dict(l=0, r=0, t=40, b=0)
+    )
+    
+    return fig
+
+def create_pie_chart(stats):
+    """Crée un graphique en camembert"""
+    if not stats:
+        return None
+    
+    matches = stats.get('matches', 0)
+    differences = stats.get('differences', 0)
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=['Correspondances', 'Différences'],
+        values=[matches, differences],
+        marker_colors=['#4CAF50', '#f44336'],
+        hole=0.3,
+        textinfo='label+percent',
+        textposition='auto'
+    )])
+    
+    fig.update_layout(
+        title='Taux de correspondance',
+        height=300,
+        margin=dict(l=0, r=0, t=40, b=0)
+    )
+    
+    return fig
+
 # ==================== LOGIN / LOGOUT ====================
 def login_page():
-    st.title("🔒 Gestion CP_410 & CP_411")
-    st.markdown("### Outil de Rapprochement et Vérification")
+    """Page de connexion avec logo"""
+    # Afficher le logo en haut
+    st.markdown(f"""
+    <div style="text-align: center; padding: 20px 0;">
+        <div style="display: inline-block; background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%); 
+                    padding: 20px 40px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);">
+            <h1 style="color: white; margin: 0; font-size: 36px;">📊 CP_410 / CP_411</h1>
+            <p style="color: #4FC3F7; margin: 5px 0 0 0; font-size: 16px;">Gestion et Rapprochement</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("---")
+    st.markdown("### 🔐 Connexion sécurisée")
     
     with st.form("login_form"):
-        username = st.text_input("Nom d'utilisateur")
-        password = st.text_input("Mot de passe", type="password")
-        submitted = st.form_submit_button("Se connecter")
-        
-        if submitted:
-            if not username or not password:
-                st.error("Veuillez saisir votre nom d'utilisateur et mot de passe")
-            else:
-                user = st.session_state.db.authenticate_user(username, password)
-                if user:
-                    st.session_state.db.update_last_login(username)
-                    st.session_state.db.log_login_attempt(username, "success")
-                    st.session_state.db.log_activity(username, "Connexion", "Utilisateur connecté avec succès")
-                    st.session_state.authenticated = True
-                    st.session_state.current_user = user
-                    st.rerun()
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            username = st.text_input("👤 Nom d'utilisateur", placeholder="Entrez votre nom d'utilisateur")
+            password = st.text_input("🔑 Mot de passe", type="password", placeholder="Entrez votre mot de passe")
+            submitted = st.form_submit_button("🚀 Se connecter", use_container_width=True)
+            
+            if submitted:
+                if not username or not password:
+                    st.error("Veuillez saisir votre nom d'utilisateur et mot de passe")
                 else:
-                    st.session_state.db.log_login_attempt(username, "failed")
-                    st.error("Nom d'utilisateur ou mot de passe incorrect")
+                    user = st.session_state.db.authenticate_user(username, password)
+                    if user:
+                        st.session_state.db.update_last_login(username)
+                        st.session_state.db.log_login_attempt(username, "success")
+                        st.session_state.db.log_activity(username, "Connexion", "Utilisateur connecté avec succès")
+                        st.session_state.authenticated = True
+                        st.session_state.current_user = user
+                        st.rerun()
+                    else:
+                        st.session_state.db.log_login_attempt(username, "failed")
+                        st.error("❌ Nom d'utilisateur ou mot de passe incorrect")
     
-    st.caption("Identifiants par défaut : admin / admin123")
+    st.markdown("---")
+    st.caption("💡 Identifiants par défaut : **admin** / **admin123**")
 
 def logout():
     if st.session_state.current_user:
@@ -358,15 +696,18 @@ def user_management_section():
     db = st.session_state.db
     users = db.get_all_users()
     
-    # Formulaire d'ajout
-    with st.expander("➕ Ajouter un utilisateur"):
+    with st.expander("➕ Ajouter un utilisateur", expanded=False):
         with st.form("add_user_form"):
-            new_username = st.text_input("Nom d'utilisateur")
-            new_password = st.text_input("Mot de passe", type="password")
-            new_confirm = st.text_input("Confirmer le mot de passe", type="password")
-            new_fullname = st.text_input("Nom complet")
-            new_role = st.selectbox("Rôle", ["user", "admin"])
-            submitted = st.form_submit_button("Ajouter")
+            col1, col2 = st.columns(2)
+            with col1:
+                new_username = st.text_input("👤 Nom d'utilisateur*")
+                new_password = st.text_input("🔑 Mot de passe*", type="password")
+                new_confirm = st.text_input("✅ Confirmer le mot de passe*", type="password")
+            with col2:
+                new_fullname = st.text_input("📝 Nom complet")
+                new_role = st.selectbox("🎯 Rôle", ["user", "admin"])
+            
+            submitted = st.form_submit_button("➕ Ajouter", use_container_width=True)
             if submitted:
                 if not new_username or not new_password:
                     st.error("Veuillez remplir tous les champs obligatoires")
@@ -376,12 +717,11 @@ def user_management_section():
                     st.error("Le mot de passe doit contenir au moins 6 caractères")
                 else:
                     if db.add_user(new_username, new_password, new_fullname, new_role):
-                        st.success(f"Utilisateur {new_username} ajouté avec succès")
+                        st.success(f"✅ Utilisateur {new_username} ajouté avec succès")
                         st.rerun()
                     else:
-                        st.error("Ce nom d'utilisateur existe déjà")
+                        st.error("❌ Ce nom d'utilisateur existe déjà")
     
-    # Liste des utilisateurs
     if users:
         user_df = pd.DataFrame(users, columns=["ID", "Utilisateur", "Nom complet", "Rôle", "Statut", "Créé le", "Dernière connexion"])
         st.dataframe(user_df, use_container_width=True, hide_index=True)
@@ -396,15 +736,15 @@ def user_management_section():
                     new_fullname = st.text_input("Nom complet", value=full_name or "", key=f"fullname_{user_id}")
                     new_role = st.selectbox("Rôle", ["user", "admin"], index=0 if role=="user" else 1, key=f"role_{user_id}")
                     new_status = st.selectbox("Statut", ["active", "inactive"], index=0 if status=="active" else 1, key=f"status_{user_id}")
-                    if st.button("Enregistrer modifications", key=f"save_{user_id}"):
+                    if st.button("💾 Enregistrer", key=f"save_{user_id}"):
                         db.update_user(user_id, new_fullname, new_role, new_status)
-                        st.success("Utilisateur modifié")
+                        st.success("✅ Utilisateur modifié")
                         st.rerun()
                 with col2:
                     if st.button("🗑️ Supprimer", key=f"del_{user_id}"):
                         if st.checkbox("Confirmer la suppression", key=f"confirm_{user_id}"):
                             db.delete_user(user_id)
-                            st.success("Utilisateur supprimé")
+                            st.success("✅ Utilisateur supprimé")
                             st.rerun()
     else:
         st.info("Aucun utilisateur trouvé")
@@ -412,10 +752,14 @@ def user_management_section():
 def change_password_section():
     st.subheader("🔑 Changer mon mot de passe")
     with st.form("change_pwd_form"):
-        old_pwd = st.text_input("Mot de passe actuel", type="password")
-        new_pwd = st.text_input("Nouveau mot de passe", type="password")
-        confirm_pwd = st.text_input("Confirmer le nouveau mot de passe", type="password")
-        submitted = st.form_submit_button("Changer le mot de passe")
+        col1, col2 = st.columns(2)
+        with col1:
+            old_pwd = st.text_input("🔐 Mot de passe actuel", type="password")
+            new_pwd = st.text_input("🆕 Nouveau mot de passe", type="password")
+        with col2:
+            confirm_pwd = st.text_input("✅ Confirmer le nouveau mot de passe", type="password")
+        
+        submitted = st.form_submit_button("🔄 Changer le mot de passe", use_container_width=True)
         if submitted:
             if not old_pwd or not new_pwd:
                 st.error("Veuillez remplir tous les champs")
@@ -425,28 +769,45 @@ def change_password_section():
                 st.error("Le mot de passe doit contenir au moins 6 caractères")
             else:
                 if st.session_state.db.change_password(st.session_state.current_user[1], old_pwd, new_pwd):
-                    st.success("Mot de passe modifié avec succès")
+                    st.success("✅ Mot de passe modifié avec succès")
                 else:
-                    st.error("Mot de passe actuel incorrect")
+                    st.error("❌ Mot de passe actuel incorrect")
 
 # ==================== FONCTIONS D'IMPORT ====================
 def import_file_section(data_type):
-    """Section d'import avec gestion d'état"""
-    uploaded_file = st.file_uploader(f"Importer {data_type}", type=["csv", "xlsx", "xls"], key=f"upload_{data_type}")
+    """Section d'import avec gestion d'état et logging"""
+    uploaded_file = st.file_uploader(f"📤 Importer {data_type}", type=["csv", "xlsx", "xls"], key=f"upload_{data_type}")
     if uploaded_file is not None:
-        with st.spinner(f"Chargement de {data_type} en cours..."):
+        with st.spinner(f"⏳ Chargement de {data_type} en cours..."):
             df = load_file(uploaded_file)
             if df is not None:
-                st.success(f"Données importées : {len(df)} lignes")
+                st.success(f"✅ Données importées : {len(df)} lignes")
+                # Log l'import
+                if st.session_state.current_user:
+                    st.session_state.db.log_file_upload(
+                        st.session_state.current_user[1],
+                        uploaded_file.name,
+                        data_type,
+                        len(df)
+                    )
                 return df
             else:
-                st.error("Le fichier est vide ou corrompu")
+                st.error("❌ Le fichier est vide ou corrompu")
                 return None
     return None
 
+# ==================== EXPORT ====================
+def export_to_excel(df, filename):
+    """Convertit un DataFrame en fichier Excel téléchargeable"""
+    if df is None or df.empty:
+        return None
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+
 # ==================== INTERFACE PRINCIPALE ====================
 def main_app():
-    st.set_page_config(page_title="Gestion CP_410 & CP_411", layout="wide")
     init_session_state()
     
     if not st.session_state.authenticated:
@@ -455,108 +816,309 @@ def main_app():
     
     # Barre latérale
     with st.sidebar:
-        st.markdown(f"**👤 {st.session_state.current_user[2]}** ({st.session_state.current_user[3]})")
-        if st.button("🚪 Déconnexion"):
-            logout()
+        # Logo
+        st.markdown(f"""
+        <div class="logo-container">
+            <svg width="180" height="60" xmlns="http://www.w3.org/2000/svg">
+                <rect width="180" height="60" rx="10" fill="#1E3A5F"/>
+                <text x="10" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">CP</text>
+                <text x="50" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">410</text>
+                <text x="100" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">|</text>
+                <text x="120" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">411</text>
+                <circle cx="165" cy="15" r="8" fill="#4FC3F7" opacity="0.8"/>
+                <circle cx="165" cy="15" r="4" fill="#FFFFFF" opacity="0.6"/>
+            </svg>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div style="text-align: center; padding: 10px; background: #e8f4f8; border-radius: 8px; margin-bottom: 15px;">
+            <strong>👤 {st.session_state.current_user[2]}</strong><br>
+            <span style="font-size: 12px; color: #666;">{st.session_state.current_user[3]}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Menu avec option_menu
+        menu_items = ["🏠 Tableau de bord", "📄 CP_410", "📄 CP_411", "🔍 Vérification 410→411", "🔍 Vérification 411→410", "📋 Rapprochement"]
+        
+        if st.session_state.current_user[3] == "admin":
+            menu_items.append("👥 Administration")
+        
+        selected = option_menu(
+            menu_title=None,
+            options=menu_items,
+            icons=["house", "file", "file", "search", "search", "clipboard", "gear"] if len(menu_items) > 6 else ["house", "file", "file", "search", "search", "clipboard"],
+            menu_icon="cast",
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important", "background-color": "#fafafa"},
+                "icon": {"color": "#1E3A5F", "font-size": "18px"},
+                "nav-link": {"font-size": "14px", "text-align": "left", "margin": "0px", "--hover-color": "#e8f4f8"},
+                "nav-link-selected": {"background-color": "#1E3A5F", "color": "white"},
+            }
+        )
+        
         st.divider()
-        if st.button("🔑 Changer mon mot de passe"):
+        
+        # Boutons déconnexion et changement de mot de passe
+        if st.button("🔑 Changer mon mot de passe", use_container_width=True):
             st.session_state.show_change_pwd = not st.session_state.get("show_change_pwd", False)
+        
         if st.session_state.get("show_change_pwd", False):
             change_password_section()
-        if st.session_state.current_user[3] == "admin":
-            st.divider()
-            st.markdown("### Administration")
-            if st.button("👥 Gestion des utilisateurs"):
-                st.session_state.show_user_mgmt = not st.session_state.get("show_user_mgmt", False)
-            if st.session_state.get("show_user_mgmt", False):
-                user_management_section()
+        
+        if st.button("🚪 Déconnexion", use_container_width=True):
+            logout()
     
-    # Onglets principaux
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["CP_410", "CP_411", "Vérification 410/411", "Vérification 411/410", "Rapprochement"])
+    # Contenu principal
+    if selected == "🏠 Tableau de bord":
+        st.markdown("""
+        <div class="main-header">
+            <h1>📊 Tableau de bord</h1>
+            <p>Vue d'ensemble des données et métriques</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        display_dashboard_metrics()
+        
+        st.markdown("---")
+        
+        # Métriques détaillées si les données sont chargées
+        if st.session_state.cp410_data is not None and st.session_state.cp411_data is not None:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📊 Statistiques CP_410")
+                stats410 = get_data_stats(st.session_state.cp410_data)
+                if stats410:
+                    st.json(stats410)
+            
+            with col2:
+                st.markdown("#### 📊 Statistiques CP_411")
+                stats411 = get_data_stats(st.session_state.cp411_data)
+                if stats411:
+                    st.json(stats411)
+            
+            # Graphique de comparaison
+            st.markdown("#### 📈 Analyse comparative")
+            df_result, stats, _ = compute_policy_comparison_410_411(
+                st.session_state.cp410_data, 
+                st.session_state.cp411_data
+            )
+            
+            if stats:
+                col1, col2 = st.columns(2)
+                with col1:
+                    fig1 = create_comparison_chart(stats)
+                    if fig1:
+                        st.plotly_chart(fig1, use_container_width=True)
+                with col2:
+                    fig2 = create_pie_chart(stats)
+                    if fig2:
+                        st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("💡 Importez les fichiers CP_410 et CP_411 pour voir les analyses détaillées")
     
-    # Onglet CP_410
-    with tab1:
-        st.header("CP_410")
+    elif selected == "📄 CP_410":
+        st.markdown("""
+        <div class="main-header">
+            <h1>📄 Gestion CP_410</h1>
+            <p>Importation et visualisation des données CP_410</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         df = import_file_section("CP_410")
         if df is not None:
             st.session_state.cp410_data = df
+        
         if st.session_state.cp410_data is not None:
+            # Métriques
+            stats = get_data_stats(st.session_state.cp410_data)
+            if stats:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📄 Lignes", stats["rows"])
+                with col2:
+                    st.metric("📊 Colonnes", stats["columns"])
+                with col3:
+                    st.metric("⚠️ Valeurs manquantes", stats["nulls"])
+            
             display_dataframe(st.session_state.cp410_data, title="Données CP_410", key_suffix="410")
+            
             excel_data = export_to_excel(st.session_state.cp410_data, "cp410_export.xlsx")
             if excel_data:
-                st.download_button("📥 Exporter CP_410 vers Excel", data=excel_data, file_name="cp410_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button(
+                    "📥 Exporter CP_410 vers Excel", 
+                    data=excel_data, 
+                    file_name="cp410_export.xlsx", 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
     
-    # Onglet CP_411
-    with tab2:
-        st.header("CP_411")
+    elif selected == "📄 CP_411":
+        st.markdown("""
+        <div class="main-header">
+            <h1>📄 Gestion CP_411</h1>
+            <p>Importation et visualisation des données CP_411</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         df = import_file_section("CP_411")
         if df is not None:
             st.session_state.cp411_data = df
+        
         if st.session_state.cp411_data is not None:
+            stats = get_data_stats(st.session_state.cp411_data)
+            if stats:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📄 Lignes", stats["rows"])
+                with col2:
+                    st.metric("📊 Colonnes", stats["columns"])
+                with col3:
+                    st.metric("⚠️ Valeurs manquantes", stats["nulls"])
+            
             display_dataframe(st.session_state.cp411_data, title="Données CP_411", key_suffix="411")
+            
             excel_data = export_to_excel(st.session_state.cp411_data, "cp411_export.xlsx")
             if excel_data:
-                st.download_button("📥 Exporter CP_411 vers Excel", data=excel_data, file_name="cp411_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                st.download_button(
+                    "📥 Exporter CP_411 vers Excel", 
+                    data=excel_data, 
+                    file_name="cp411_export.xlsx", 
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
     
-    # Onglet Vérification 410/411
-    with tab3:
-        st.header("Vérification des No Police (410 → 411)")
-        if st.button("🔍 Vérifier les polices 410/411"):
-            with st.spinner("Calcul en cours..."):
-                df_result, stats = compute_policy_comparison_410_411(st.session_state.cp410_data, st.session_state.cp411_data)
-                if df_result is not None:
-                    st.session_state.verif_410_411 = df_result
-                    st.success(stats)
-                else:
-                    st.warning("Veuillez importer les deux fichiers et vérifier la colonne 'No Police'")
+    elif selected == "🔍 Vérification 410→411":
+        st.markdown("""
+        <div class="main-header">
+            <h1>🔍 Vérification 410 → 411</h1>
+            <p>Comparaison des polices CP_410 avec CP_411</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔍 Vérifier", use_container_width=True):
+                with st.spinner("Calcul en cours..."):
+                    df_result, stats, stats_text = compute_policy_comparison_410_411(
+                        st.session_state.cp410_data, 
+                        st.session_state.cp411_data
+                    )
+                    if df_result is not None:
+                        st.session_state.verif_410_411 = df_result
+                        st.session_state.verif_410_411_stats = stats
+                        st.success(stats_text)
+                    else:
+                        st.warning("Veuillez importer les deux fichiers et vérifier la colonne 'No Police'")
+        
+        if st.session_state.get('verif_410_411_stats'):
+            display_metrics(st.session_state.verif_410_411_stats)
+        
         if st.session_state.verif_410_411 is not None:
+            st.markdown("---")
             display_dataframe(st.session_state.verif_410_411, title="Résultats 410 → 411", key_suffix="verif410")
             excel_data = export_to_excel(st.session_state.verif_410_411, "verification_410_411.xlsx")
             if excel_data:
-                st.download_button("📥 Exporter les résultats", data=excel_data, file_name="verification_410_411.xlsx")
+                st.download_button(
+                    "📥 Exporter les résultats", 
+                    data=excel_data, 
+                    file_name="verification_410_411.xlsx",
+                    use_container_width=True
+                )
     
-    # Onglet Vérification 411/410
-    with tab4:
-        st.header("Vérification des No Police (411 → 410)")
-        if st.button("🔍 Vérifier les polices 411/410"):
-            with st.spinner("Calcul en cours..."):
-                df_result, stats = compute_policy_comparison_411_410(st.session_state.cp411_data, st.session_state.cp410_data)
-                if df_result is not None:
-                    st.session_state.verif_411_410 = df_result
-                    st.success(stats)
-                else:
-                    st.warning("Veuillez importer les deux fichiers et vérifier la colonne 'No Police'")
+    elif selected == "🔍 Vérification 411→410":
+        st.markdown("""
+        <div class="main-header">
+            <h1>🔍 Vérification 411 → 410</h1>
+            <p>Comparaison des polices CP_411 avec CP_410</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔍 Vérifier", use_container_width=True):
+                with st.spinner("Calcul en cours..."):
+                    df_result, stats, stats_text = compute_policy_comparison_411_410(
+                        st.session_state.cp411_data, 
+                        st.session_state.cp410_data
+                    )
+                    if df_result is not None:
+                        st.session_state.verif_411_410 = df_result
+                        st.session_state.verif_411_410_stats = stats
+                        st.success(stats_text)
+                    else:
+                        st.warning("Veuillez importer les deux fichiers et vérifier la colonne 'No Police'")
+        
+        if st.session_state.get('verif_411_410_stats'):
+            display_metrics(st.session_state.verif_411_410_stats)
+        
         if st.session_state.verif_411_410 is not None:
+            st.markdown("---")
             display_dataframe(st.session_state.verif_411_410, title="Résultats 411 → 410", key_suffix="verif411")
             excel_data = export_to_excel(st.session_state.verif_411_410, "verification_411_410.xlsx")
             if excel_data:
-                st.download_button("📥 Exporter les résultats", data=excel_data, file_name="verification_411_410.xlsx")
+                st.download_button(
+                    "📥 Exporter les résultats", 
+                    data=excel_data, 
+                    file_name="verification_411_410.xlsx",
+                    use_container_width=True
+                )
     
-    # Onglet Rapprochement
-    with tab5:
-        st.header("Rapprochement - Réf Pièce invalides")
+    elif selected == "📋 Rapprochement":
+        st.markdown("""
+        <div class="main-header">
+            <h1>📋 Rapprochement</h1>
+            <p>Vérification des références et association avec les polices</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📋 Vérifier les Réf Pièce"):
+            if st.button("📋 Vérifier les Réf Pièce", use_container_width=True):
                 with st.spinner("Recherche des références invalides..."):
                     invalid = compute_invalid_refs(st.session_state.cp411_data)
                     if invalid is not None:
                         st.session_state.numero_recu_list = invalid
-                        st.success(f"Références invalides trouvées : {len(invalid)}")
+                        st.success(f"✅ Références invalides trouvées : {len(invalid)}")
                     else:
                         st.warning("Veuillez importer CP_411 avec une colonne 'Réf Pièce'")
+        
         with col2:
-            if st.button("🔎 Trouver les polices associées"):
+            if st.button("🔎 Trouver les polices associées", use_container_width=True):
                 if st.session_state.numero_recu_list:
                     with st.spinner("Recherche des polices associées..."):
-                        police_dict = compute_polices_for_recus(st.session_state.cp411_data, st.session_state.numero_recu_list)
+                        police_dict = compute_polices_for_recus(
+                            st.session_state.cp411_data, 
+                            st.session_state.numero_recu_list
+                        )
                         st.session_state.police_associee_dict = police_dict
-                        st.success("Recherche terminée.")
+                        
+                        # Comptage
+                        total_with_polices = sum(1 for p in police_dict.values() if p)
+                        st.success(f"✅ {total_with_polices}/{len(police_dict)} références ont des polices associées")
                 else:
                     st.warning("Veuillez d'abord lancer 'Vérifier les Réf Pièce'")
         
         if st.session_state.numero_recu_list:
-            st.subheader("Références invalides et polices associées")
+            st.markdown("---")
+            st.subheader(f"📄 Références invalides ({len(st.session_state.numero_recu_list)})")
+            
+            # Métriques
+            total_polices = sum(len(p) for p in st.session_state.police_associee_dict.values())
+            with_polices = sum(1 for p in st.session_state.police_associee_dict.values() if p)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📄 Références invalides", len(st.session_state.numero_recu_list))
+            with col2:
+                st.metric("🔗 Avec polices associées", with_polices)
+            with col3:
+                st.metric("📊 Total polices trouvées", total_polices)
+            
+            st.markdown("---")
+            
             for numero in st.session_state.numero_recu_list:
                 polices = st.session_state.police_associee_dict.get(numero, [])
                 with st.expander(f"📄 {numero} ({len(polices)} police(s) associée(s))"):
@@ -569,22 +1131,33 @@ def main_app():
             # Export des résultats
             export_data = []
             for num, polices in st.session_state.police_associee_dict.items():
-                export_data.append({"Numéro reçu": num, "Polices associées": ", ".join(polices) if polices else "Aucune"})
+                export_data.append({
+                    "Numéro reçu": num, 
+                    "Polices associées": ", ".join(polices) if polices else "Aucune"
+                })
             if export_data:
                 df_export = pd.DataFrame(export_data)
                 excel_data = export_to_excel(df_export, "rapprochement.xlsx")
                 if excel_data:
-                    st.download_button("📥 Exporter le rapprochement vers Excel", data=excel_data, file_name="rapprochement.xlsx")
-
-# ==================== FONCTION EXPORT ====================
-def export_to_excel(df, filename):
-    """Convertit un DataFrame en fichier Excel téléchargeable"""
-    if df is None or df.empty:
-        return None
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
-    return output.getvalue()
+                    st.download_button(
+                        "📥 Exporter le rapprochement vers Excel", 
+                        data=excel_data, 
+                        file_name="rapprochement.xlsx",
+                        use_container_width=True
+                    )
+    
+    elif selected == "👥 Administration":
+        st.markdown("""
+        <div class="main-header">
+            <h1>👥 Administration</h1>
+            <p>Gestion des utilisateurs et paramètres système</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.session_state.current_user[3] == "admin":
+            user_management_section()
+        else:
+            st.error("❌ Accès non autorisé. Vous devez être administrateur.")
 
 if __name__ == "__main__":
     main_app()
