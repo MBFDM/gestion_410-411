@@ -25,7 +25,7 @@ except ImportError:
 # ==================== CONFIGURATION PAGE ====================
 st.set_page_config(
     page_title="Gestion CP_410 & CP_411",
-    page_icon="📊",
+    page_icon="logo_1.jpg",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -612,17 +612,6 @@ def create_pie_chart(stats):
 # ==================== LOGIN / LOGOUT ====================
 def login_page():
     """Page de connexion avec logo"""
-    st.markdown(f"""
-    <div style="text-align: center; padding: 20px 0;">
-        <div style="display: inline-block; background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%); 
-                    padding: 20px 40px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);">
-            <h1 style="color: white; margin: 0; font-size: 36px;">📊 CP_410 / CP_411</h1>
-            <p style="color: #4FC3F7; margin: 5px 0 0 0; font-size: 16px;">Gestion et Rapprochement</p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("---")
     st.markdown("### 🔐 Connexion sécurisée")
     
     with st.form("login_form"):
@@ -648,8 +637,8 @@ def login_page():
                         st.session_state.db.log_login_attempt(username, "failed")
                         st.error("❌ Nom d'utilisateur ou mot de passe incorrect")
     
-    st.markdown("---")
-    st.caption("💡 Identifiants par défaut : **admin** / **admin123**")
+    #st.markdown("---")
+    #st.caption("💡 Identifiants par défaut : **admin** / **admin123**")
 
 def logout():
     if st.session_state.current_user:
