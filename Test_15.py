@@ -6,10 +6,21 @@ import hashlib
 import datetime
 from io import BytesIO
 import base64
-from PIL import Image
-import plotly.express as px
-import plotly.graph_objects as go
-from streamlit_option_menu import option_menu
+
+# Imports avec fallback
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("⚠️ Plotly non disponible. Les graphiques seront désactivés. Installez avec: pip install plotly")
+
+try:
+    from streamlit_option_menu import option_menu
+    MENU_AVAILABLE = True
+except ImportError:
+    MENU_AVAILABLE = False
 
 # ==================== CONFIGURATION PAGE ====================
 st.set_page_config(
@@ -20,116 +31,72 @@ st.set_page_config(
 )
 
 # ==================== LOGO ET STYLE ====================
-def get_logo_base64():
-    """Crée un logo SVG simple en base64"""
-    svg_logo = '''
-    <svg width="200" height="60" xmlns="http://www.w3.org/2000/svg">
-        <rect width="200" height="60" rx="10" fill="#1E3A5F"/>
-        <text x="15" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">CP</text>
-        <text x="55" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">410</text>
-        <text x="110" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">|</text>
-        <text x="130" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">411</text>
-        <circle cx="185" cy="15" r="8" fill="#4FC3F7" opacity="0.8"/>
-        <circle cx="185" cy="15" r="4" fill="#FFFFFF" opacity="0.6"/>
-    </svg>
-    '''
-    return base64.b64encode(svg_logo.encode()).decode()
-
 # CSS personnalisé
-st.markdown(f"""
+st.markdown("""
 <style>
     /* Style du logo dans la sidebar */
-    .logo-container {{
+    .logo-container {
         text-align: center;
         padding: 20px 0;
         background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%);
         border-radius: 10px;
         margin-bottom: 20px;
-    }}
-    .logo-container svg {{
-        width: 180px;
-        height: auto;
-    }}
+    }
     /* Cartes de métriques */
-    .metric-card {{
+    .metric-card {
         background: white;
         padding: 20px;
         border-radius: 10px;
         box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         border-left: 4px solid #4FC3F7;
         margin: 10px 0;
-    }}
-    .metric-card h3 {{
+    }
+    .metric-card h3 {
         color: #1E3A5F;
         margin: 0;
         font-size: 14px;
         font-weight: 600;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-    }}
-    .metric-card .value {{
+    }
+    .metric-card .value {
         font-size: 28px;
         font-weight: bold;
         color: #1E3A5F;
         margin: 5px 0;
-    }}
-    .metric-card .change {{
+    }
+    .metric-card .change {
         font-size: 14px;
         color: #4CAF50;
-    }}
-    .metric-card .change.negative {{
+    }
+    .metric-card .change.negative {
         color: #f44336;
-    }}
-    /* Sidebar améliorée */
-    .css-1d391kg {{
-        background-color: #f8f9fa;
-    }}
-    .stButton > button {{
+    }
+    .stButton > button {
         width: 100%;
         border-radius: 8px;
         font-weight: 500;
         transition: all 0.3s;
-    }}
-    .stButton > button:hover {{
+    }
+    .stButton > button:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }}
-    /* En-tête principal */
-    .main-header {{
+    }
+    .main-header {
         background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%);
         padding: 20px;
         border-radius: 10px;
         color: white;
         margin-bottom: 20px;
-    }}
-    .main-header h1 {{
+    }
+    .main-header h1 {
         margin: 0;
         font-size: 28px;
-    }}
-    .main-header p {{
+    }
+    .main-header p {
         margin: 5px 0 0 0;
         opacity: 0.9;
-    }}
-    /* Badges de statut */
-    .badge {{
-        display: inline-block;
-        padding: 3px 12px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-    }}
-    .badge-success {{
-        background: #4CAF50;
-        color: white;
-    }}
-    .badge-danger {{
-        background: #f44336;
-        color: white;
-    }}
-    .badge-warning {{
-        background: #FF9800;
-        color: white;
-    }}
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -349,6 +316,10 @@ def init_session_state():
         st.session_state.show_change_pwd = False
     if 'show_user_mgmt' not in st.session_state:
         st.session_state.show_user_mgmt = False
+    if 'verif_410_411_stats' not in st.session_state:
+        st.session_state.verif_410_411_stats = None
+    if 'verif_411_410_stats' not in st.session_state:
+        st.session_state.verif_411_410_stats = None
 
 # ==================== FONCTIONS AVEC CACHE ====================
 @st.cache_data
@@ -589,7 +560,7 @@ def display_dashboard_metrics():
 # ==================== GRAPHIQUES ====================
 def create_comparison_chart(stats):
     """Crée un graphique de comparaison"""
-    if not stats:
+    if not PLOTLY_AVAILABLE or not stats:
         return None
     
     fig = go.Figure(data=[
@@ -615,7 +586,7 @@ def create_comparison_chart(stats):
 
 def create_pie_chart(stats):
     """Crée un graphique en camembert"""
-    if not stats:
+    if not PLOTLY_AVAILABLE or not stats:
         return None
     
     matches = stats.get('matches', 0)
@@ -641,7 +612,6 @@ def create_pie_chart(stats):
 # ==================== LOGIN / LOGOUT ====================
 def login_page():
     """Page de connexion avec logo"""
-    # Afficher le logo en haut
     st.markdown(f"""
     <div style="text-align: center; padding: 20px 0;">
         <div style="display: inline-block; background: linear-gradient(135deg, #1E3A5F 0%, #2C5F8A 100%); 
@@ -782,7 +752,6 @@ def import_file_section(data_type):
             df = load_file(uploaded_file)
             if df is not None:
                 st.success(f"✅ Données importées : {len(df)} lignes")
-                # Log l'import
                 if st.session_state.current_user:
                     st.session_state.db.log_file_upload(
                         st.session_state.current_user[1],
@@ -817,17 +786,10 @@ def main_app():
     # Barre latérale
     with st.sidebar:
         # Logo
-        st.markdown(f"""
+        st.markdown("""
         <div class="logo-container">
-            <svg width="180" height="60" xmlns="http://www.w3.org/2000/svg">
-                <rect width="180" height="60" rx="10" fill="#1E3A5F"/>
-                <text x="10" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">CP</text>
-                <text x="50" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">410</text>
-                <text x="100" y="40" font-family="Arial" font-size="28" fill="#FFFFFF" font-weight="bold">|</text>
-                <text x="120" y="40" font-family="Arial" font-size="28" fill="#4FC3F7" font-weight="bold">411</text>
-                <circle cx="165" cy="15" r="8" fill="#4FC3F7" opacity="0.8"/>
-                <circle cx="165" cy="15" r="4" fill="#FFFFFF" opacity="0.6"/>
-            </svg>
+            <h2 style="color: white; margin: 0;">📊 CP_410/411</h2>
+            <p style="color: #4FC3F7; margin: 5px 0 0 0; font-size: 12px;">Gestion et Rapprochement</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -838,29 +800,32 @@ def main_app():
         </div>
         """, unsafe_allow_html=True)
         
-        # Menu avec option_menu
+        # Menu avec option_menu si disponible, sinon menu simple
         menu_items = ["🏠 Tableau de bord", "📄 CP_410", "📄 CP_411", "🔍 Vérification 410→411", "🔍 Vérification 411→410", "📋 Rapprochement"]
         
         if st.session_state.current_user[3] == "admin":
             menu_items.append("👥 Administration")
         
-        selected = option_menu(
-            menu_title=None,
-            options=menu_items,
-            icons=["house", "file", "file", "search", "search", "clipboard", "gear"] if len(menu_items) > 6 else ["house", "file", "file", "search", "search", "clipboard"],
-            menu_icon="cast",
-            default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": "#fafafa"},
-                "icon": {"color": "#1E3A5F", "font-size": "18px"},
-                "nav-link": {"font-size": "14px", "text-align": "left", "margin": "0px", "--hover-color": "#e8f4f8"},
-                "nav-link-selected": {"background-color": "#1E3A5F", "color": "white"},
-            }
-        )
+        if MENU_AVAILABLE:
+            selected = option_menu(
+                menu_title=None,
+                options=menu_items,
+                icons=["house", "file", "file", "search", "search", "clipboard", "gear"] if len(menu_items) > 6 else ["house", "file", "file", "search", "search", "clipboard"],
+                menu_icon="cast",
+                default_index=0,
+                styles={
+                    "container": {"padding": "0!important", "background-color": "#fafafa"},
+                    "icon": {"color": "#1E3A5F", "font-size": "18px"},
+                    "nav-link": {"font-size": "14px", "text-align": "left", "margin": "0px", "--hover-color": "#e8f4f8"},
+                    "nav-link-selected": {"background-color": "#1E3A5F", "color": "white"},
+                }
+            )
+        else:
+            # Menu simple si option_menu n'est pas disponible
+            selected = st.radio("Navigation", menu_items, index=0)
         
         st.divider()
         
-        # Boutons déconnexion et changement de mot de passe
         if st.button("🔑 Changer mon mot de passe", use_container_width=True):
             st.session_state.show_change_pwd = not st.session_state.get("show_change_pwd", False)
         
@@ -883,7 +848,6 @@ def main_app():
         
         st.markdown("---")
         
-        # Métriques détaillées si les données sont chargées
         if st.session_state.cp410_data is not None and st.session_state.cp411_data is not None:
             col1, col2 = st.columns(2)
             
@@ -899,23 +863,23 @@ def main_app():
                 if stats411:
                     st.json(stats411)
             
-            # Graphique de comparaison
-            st.markdown("#### 📈 Analyse comparative")
-            df_result, stats, _ = compute_policy_comparison_410_411(
-                st.session_state.cp410_data, 
-                st.session_state.cp411_data
-            )
-            
-            if stats:
-                col1, col2 = st.columns(2)
-                with col1:
-                    fig1 = create_comparison_chart(stats)
-                    if fig1:
-                        st.plotly_chart(fig1, use_container_width=True)
-                with col2:
-                    fig2 = create_pie_chart(stats)
-                    if fig2:
-                        st.plotly_chart(fig2, use_container_width=True)
+            if PLOTLY_AVAILABLE:
+                st.markdown("#### 📈 Analyse comparative")
+                df_result, stats, _ = compute_policy_comparison_410_411(
+                    st.session_state.cp410_data, 
+                    st.session_state.cp411_data
+                )
+                
+                if stats:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        fig1 = create_comparison_chart(stats)
+                        if fig1:
+                            st.plotly_chart(fig1, use_container_width=True)
+                    with col2:
+                        fig2 = create_pie_chart(stats)
+                        if fig2:
+                            st.plotly_chart(fig2, use_container_width=True)
         else:
             st.info("💡 Importez les fichiers CP_410 et CP_411 pour voir les analyses détaillées")
     
@@ -932,7 +896,6 @@ def main_app():
             st.session_state.cp410_data = df
         
         if st.session_state.cp410_data is not None:
-            # Métriques
             stats = get_data_stats(st.session_state.cp410_data)
             if stats:
                 col1, col2, col3 = st.columns(3)
@@ -1095,7 +1058,6 @@ def main_app():
                         )
                         st.session_state.police_associee_dict = police_dict
                         
-                        # Comptage
                         total_with_polices = sum(1 for p in police_dict.values() if p)
                         st.success(f"✅ {total_with_polices}/{len(police_dict)} références ont des polices associées")
                 else:
@@ -1105,7 +1067,6 @@ def main_app():
             st.markdown("---")
             st.subheader(f"📄 Références invalides ({len(st.session_state.numero_recu_list)})")
             
-            # Métriques
             total_polices = sum(len(p) for p in st.session_state.police_associee_dict.values())
             with_polices = sum(1 for p in st.session_state.police_associee_dict.values() if p)
             
@@ -1128,7 +1089,6 @@ def main_app():
                     else:
                         st.write("Aucune police associée trouvée")
             
-            # Export des résultats
             export_data = []
             for num, polices in st.session_state.police_associee_dict.items():
                 export_data.append({
