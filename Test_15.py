@@ -787,7 +787,7 @@ def main_app():
         """, unsafe_allow_html=True)
         
         # Menu avec option_menu si disponible, sinon menu simple
-        menu_items = ["🏠 Tableau de bord", "📄 CP_410", "📄 CP_411", "🔍 Vérification 410→411", "🔍 Vérification 411→410", "📋 Rapprochement"]
+        menu_items = ["Tableau de bord", "CP_410", "CP_411", "Vérification 410→411", "Vérification 411→410", "Rapprochement"]
         
         if st.session_state.current_user[3] == "admin":
             menu_items.append("👥 Administration")
