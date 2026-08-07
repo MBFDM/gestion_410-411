@@ -19,18 +19,11 @@ import base64
 import time
 import platform
 
-# Tentative d'import de psutil (optionnel)
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
-
 # ------------------ Configuration initiale de la page ------------------
 st.set_page_config(
     page_title="Générateur de certificats - Authentification", 
     layout="wide",
-    page_icon="📄",
+    page_icon="logo_1.jpg",
     initial_sidebar_state="expanded"
 )
 
@@ -68,28 +61,22 @@ class PerformanceMetrics:
         return elapsed
     
     def get_metrics(self):
+        total_time = time.time() - self.session_start
+        avg_time = sum(self.processing_times) / len(self.processing_times) if self.processing_times else 0
         return {
             "Total générés": self.certificates_generated,
-            "Temps moyen": f"{sum(self.processing_times) / len(self.processing_times):.2f}s" if self.processing_times else "0s",
+            "Temps moyen": f"{avg_time:.2f}s" if self.processing_times else "0s",
             "Dernier temps": f"{self.processing_times[-1]:.2f}s" if self.processing_times else "0s",
             "Total sessions": len(self.processing_times),
-            "Temps de session": f"{time.time() - self.session_start:.0f}s"
+            "Temps total session": f"{total_time:.1f}s"
         }
     
     def get_system_info(self):
-        info = {
+        return {
             "OS": platform.system(),
             "Python": platform.python_version(),
-            "CPU": "N/A",
-            "RAM": "N/A"
+            "Architecture": platform.machine()
         }
-        if PSUTIL_AVAILABLE:
-            try:
-                info["CPU"] = f"{psutil.cpu_percent()}%"
-                info["RAM"] = f"{psutil.virtual_memory().percent}%"
-            except:
-                pass
-        return info
 
 # Initialiser les métriques
 if 'metrics' not in st.session_state:
@@ -357,30 +344,26 @@ def page_generateur():
         # Métriques système
         st.subheader("📊 Métriques système")
         sys_info = st.session_state.metrics.get_system_info()
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("CPU", sys_info["CPU"])
-            st.metric("OS", sys_info["OS"][:10])
-        with col2:
-            st.metric("RAM", sys_info["RAM"])
-            st.metric("Python", sys_info["Python"])
-        
-        if not PSUTIL_AVAILABLE:
-            st.caption("💡 Installez 'psutil' pour plus de métriques système")
+        st.metric("💻 Système", sys_info["OS"])
+        st.metric("🐍 Python", sys_info["Python"])
+        st.metric("🔧 Architecture", sys_info["Architecture"])
         
         st.markdown("---")
         
         # Métriques de l'application
         st.subheader("📈 Métriques application")
         metrics = st.session_state.metrics.get_metrics()
+        
+        # Métriques en colonnes
         col1, col2 = st.columns(2)
         with col1:
-            st.metric("📄 Certificats générés", metrics["Total générés"])
+            st.metric("📄 Certificats générés", metrics["Total générés"], delta=None)
             st.metric("⏱️ Dernier temps", metrics["Dernier temps"])
         with col2:
             st.metric("🔄 Sessions", metrics["Total sessions"])
             st.metric("⚡ Temps moyen", metrics["Temps moyen"])
-        st.caption(f"⏱️ Temps de session: {metrics['Temps de session']}")
+        
+        st.metric("⏱️ Temps total session", metrics["Temps total session"])
     
     st.markdown("""
     Chargez un modèle Word (avec tableaux contenant les libellés) et un fichier Excel.
@@ -396,6 +379,7 @@ def page_generateur():
     with col2:
         excel_file = st.file_uploader("📊 Fichier Excel (.xlsx)", type=["xlsx"])
 
+    # Barre latérale pour la personnalisation
     st.sidebar.header("🎨 Personnalisation des valeurs insérées")
     font_name = st.sidebar.selectbox("Police", ["Arial", "Times New Roman", "Calibri", "Verdana", "Courier New"], index=0)
     font_size = st.sidebar.slider("Taille (pt)", 8, 48, 11)
@@ -421,12 +405,12 @@ def page_generateur():
             # Afficher les stats du fichier
             col_stats1, col_stats2, col_stats3 = st.columns(3)
             with col_stats1:
-                st.metric("Lignes", df.shape[0])
+                st.metric("📊 Lignes", df.shape[0])
             with col_stats2:
-                st.metric("Colonnes", df.shape[1])
+                st.metric("📋 Colonnes", df.shape[1])
             with col_stats3:
                 non_empty = df.count().sum()
-                st.metric("Cellules remplies", non_empty)
+                st.metric("✅ Cellules remplies", non_empty)
             
             st.subheader("Aperçu du fichier Excel")
             st.dataframe(df, use_container_width=True)
@@ -448,7 +432,7 @@ def page_generateur():
             # Enregistrer les métriques
             elapsed = st.session_state.metrics.end_processing(len(certificats))
             
-            st.success(f"{len(certificats)} certificat(s) généré(s) en {elapsed:.2f} secondes.")
+            st.success(f"✅ {len(certificats)} certificat(s) généré(s) en {elapsed:.2f} secondes.")
 
             if len(certificats) > 0:
                 first_docx = certificats[0][2]
@@ -459,7 +443,7 @@ def page_generateur():
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
 
-            st.subheader("Certificats générés")
+            st.subheader("📑 Certificats générés")
             zip_word = BytesIO()
             zip_pdf = BytesIO()
             with zipfile.ZipFile(zip_word, 'w') as zw:
@@ -488,7 +472,7 @@ def page_generateur():
                 st.download_button("📦 Tous les PDF (ZIP)", data=zip_pdf, file_name="tous_pdf.zip", mime="application/zip", disabled=(zip_pdf.getbuffer().nbytes == 0))
 
         except Exception as e:
-            st.error(f"Erreur : {str(e)}")
+            st.error(f"❌ Erreur : {str(e)}")
 
 def page_admin():
     st.title("👑 Administration des utilisateurs")
@@ -501,8 +485,7 @@ def page_admin():
     with col2:
         st.metric("📄 Certificats générés", st.session_state.metrics.certificates_generated)
     with col3:
-        metrics = st.session_state.metrics.get_metrics()
-        st.metric("🔄 Sessions", metrics["Total sessions"])
+        st.metric("🔄 Sessions", st.session_state.metrics.get_metrics()["Total sessions"])
 
     # Ajouter un utilisateur
     with st.expander("➕ Ajouter un utilisateur"):
@@ -512,11 +495,11 @@ def page_admin():
         if st.button("Créer l'utilisateur"):
             if new_username and new_password:
                 if add_user(new_username, new_password, new_role):
-                    st.success(f"Utilisateur '{new_username}' créé avec succès.")
+                    st.success(f"✅ Utilisateur '{new_username}' créé avec succès.")
                 else:
-                    st.error("Nom d'utilisateur déjà existant.")
+                    st.error("❌ Nom d'utilisateur déjà existant.")
             else:
-                st.warning("Veuillez remplir tous les champs.")
+                st.warning("⚠️ Veuillez remplir tous les champs.")
 
     # Liste des utilisateurs
     users = get_all_users()
@@ -527,27 +510,32 @@ def page_admin():
 
         # Modification / suppression
         st.subheader("🔧 Modifier ou supprimer un utilisateur")
-        selected_username = st.selectbox("Choisir un utilisateur", [u[1] for u in users if u[1] != st.session_state.username])
-        if selected_username:
-            col1, col2 = st.columns(2)
-            with col1:
-                new_pass = st.text_input("Nouveau mot de passe (laisser vide pour ne pas changer)", type="password", key="admin_new_pass")
-                if st.button("Changer le mot de passe"):
-                    if new_pass:
-                        update_user_password(selected_username, new_pass)
-                        st.success("Mot de passe mis à jour.")
-                    else:
-                        st.info("Aucun changement.")
-            with col2:
-                if st.button("🗑️ Supprimer cet utilisateur"):
-                    if selected_username != "admin":
-                        delete_user(selected_username)
-                        st.success(f"Utilisateur '{selected_username}' supprimé.")
-                        st.rerun()
-                    else:
-                        st.error("Impossible de supprimer le compte admin par défaut.")
+        # Filtrer pour ne pas afficher l'utilisateur actuel
+        user_list = [u[1] for u in users if u[1] != st.session_state.username]
+        if user_list:
+            selected_username = st.selectbox("Choisir un utilisateur", user_list)
+            if selected_username:
+                col1, col2 = st.columns(2)
+                with col1:
+                    new_pass = st.text_input("Nouveau mot de passe (laisser vide pour ne pas changer)", type="password", key="admin_new_pass")
+                    if st.button("🔄 Changer le mot de passe"):
+                        if new_pass:
+                            update_user_password(selected_username, new_pass)
+                            st.success("✅ Mot de passe mis à jour.")
+                        else:
+                            st.info("ℹ️ Aucun changement.")
+                with col2:
+                    if st.button("🗑️ Supprimer cet utilisateur"):
+                        if selected_username != "admin":
+                            delete_user(selected_username)
+                            st.success(f"✅ Utilisateur '{selected_username}' supprimé.")
+                            st.rerun()
+                        else:
+                            st.error("❌ Impossible de supprimer le compte admin par défaut.")
+        else:
+            st.info("ℹ️ Aucun autre utilisateur à gérer.")
     else:
-        st.info("Aucun utilisateur trouvé.")
+        st.info("ℹ️ Aucun utilisateur trouvé.")
 
 # ------------------ Gestion de l'authentification ------------------
 def login_page():
@@ -569,21 +557,25 @@ def login_page():
         with col2:
             st.metric("📄 Certificats générés", st.session_state.metrics.certificates_generated if hasattr(st.session_state, 'metrics') else 0)
         with col3:
-            metrics = st.session_state.metrics.get_metrics() if hasattr(st.session_state, 'metrics') else {"Total sessions": 0}
-            st.metric("🔄 Sessions", metrics["Total sessions"])
+            total_sessions = st.session_state.metrics.get_metrics()["Total sessions"] if hasattr(st.session_state, 'metrics') else 0
+            st.metric("🔄 Sessions", total_sessions)
     
-    username = st.text_input("Nom d'utilisateur")
-    password = st.text_input("Mot de passe", type="password")
-    if st.button("Se connecter", use_container_width=True):
-        role = verify_password(username, password)
-        if role:
-            st.session_state.logged_in = True
-            st.session_state.username = username
-            st.session_state.role = role
-            st.success(f"Bienvenue {username} ({role})")
-            st.rerun()
-        else:
-            st.error("Nom d'utilisateur ou mot de passe incorrect")
+    username = st.text_input("👤 Nom d'utilisateur")
+    password = st.text_input("🔑 Mot de passe", type="password")
+    
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        if st.button("🔓 Se connecter", use_container_width=True):
+            role = verify_password(username, password)
+            if role:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.role = role
+                st.success(f"✅ Bienvenue {username} ({role})")
+                time.sleep(0.5)
+                st.rerun()
+            else:
+                st.error("❌ Nom d'utilisateur ou mot de passe incorrect")
 
 def logout():
     for key in ['logged_in', 'username', 'role']:
@@ -611,7 +603,7 @@ else:
     menu = ["Générateur de certificats"]
     if st.session_state.role == "admin":
         menu.append("Administration")
-    choice = st.sidebar.radio("Aller à", menu)
+    choice = st.sidebar.radio("Aller à", menu, index=0)
 
     if choice == "Générateur de certificats":
         page_generateur()
